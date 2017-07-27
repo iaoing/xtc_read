@@ -1,0 +1,10 @@
+# a tool of convert a original xtc file to an uncompressed xtc file
+
+#### not finished; can modify the convert.c to adapt one's demand
+
+#### install
+- make
+
+#### clean
+- make clean
+
