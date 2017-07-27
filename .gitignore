@@ -1,0 +1,12 @@
+#by:bing 2017-07-27
+*~
+*.o
+*.la
+*.a
+*.lo
+*.swp
+*.tar*
+*.zip
+*.exe*
+
+test_record/

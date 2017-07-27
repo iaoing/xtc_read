@@ -2016,6 +2016,12 @@ int xtc_uc_3dfcoord(md_file *mf, float *fp, int *size, float *precision)
 			return mdio_seterror(MDIO_SUCCESS);
         }
 
+        int check_num = 7750;
+        if(fwrite((char*)&check_num, 4, 1, mf->f) != 1){
+        	printf("%s %d: check_num write failed!\n", __FUNCTION__, __LINE__);
+        }
+
+
         int uc_len = size3 * sizeof(float);
         if (xtc_uc_data(mf, (char*)fp, uc_len) < 0) return -1;
         

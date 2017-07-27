@@ -230,6 +230,10 @@ static void xtc_receiveints(int *, int, int, const unsigned *, int *);
 static int xtc_timestep(md_file *, md_ts *);
 static int xtc_3dfcoord(md_file *, float *, int *, float *);
 
+/* begin by:bing 2017-07-27 */
+static int is_compressed(md_file *);
+static int xtc_uc_data(md_file *, char *, int);
+/* end by:bing 2017-07-27 */
 
 // Error reporting functions
 static int mdio_errno(void);
@@ -951,7 +955,7 @@ static int g96_timestep(md_file *mf, md_ts *ts) {
       return mdio_seterror(MDIO_BADFORMAT);
     }
 
-		if (mdio_readline(mf, buf, MAX_G96_LINE + 1) < 0) {
+	if (mdio_readline(mf, buf, MAX_G96_LINE + 1) < 0) {
       free(ts->box);
       ts->box = NULL;
       return -1;
@@ -1628,13 +1632,13 @@ static int xtc_timestep(md_file *mf, md_ts *ts) {
        (xtc_float(mf, &z[1]) < 0) ||
        (xtc_float(mf, &z[2]) < 0) )
     return -1;
-  // Allocate the box and convert the vectors.
-  ts->box = (md_box *) malloc(sizeof(md_box));
-  if (mdio_readbox(ts->box, x, y, z) < 0) {
-    free(ts->box);
-    ts->box = NULL;
-    return -1;
-  }
+	// Allocate the box and convert the vectors.
+	ts->box = (md_box *) malloc(sizeof(md_box));
+	if (mdio_readbox(ts->box, x, y, z) < 0) {
+		free(ts->box);
+		ts->box = NULL;
+		return -1;
+	}
 
 	ts->pos = (float *) malloc(sizeof(float) * 3 * ts->natoms);
 	if (!ts->pos) return mdio_seterror(MDIO_BADMALLOC);
@@ -1814,6 +1818,24 @@ static int xtc_3dfcoord(md_file *mf, float *fp, int *size, float *precision) {
 		}
 		return *size;
 	}
+
+	/* begin by:bing 2017-07-27 */
+	if (is_compressed(mf) == 0) {
+		// read the uncompressed coordinate info;
+		// this uncompressed data is not multi precision, so return directly;
+		int fp_size;
+		fp_size = size3 * sizeof(float);
+		if (xtc_uc_data(mf, (char *) fp, fp_size) < 0) {
+			fprintf(stderr, "xtc_uc_data return -1, line:  %d\n", __LINE__);
+			return -1;
+		}
+		fprintf(stderr, "xtc_uc_data return 1, line:  %d\n", __LINE__);
+		return 1;
+	}else{
+		fseek(mf->f, -sizeof(int), SEEK_CUR);
+	}
+	/* end by:bing 2017-07-27 */
+
 	xtc_float(mf, precision);
 	if (ip == NULL) {
 		ip = (int *)malloc(size3 * sizeof(*ip));
@@ -1865,9 +1887,10 @@ static int xtc_3dfcoord(md_file *mf, float *fp, int *size, float *precision) {
 		return -1;
 	}
 
-
 	/* buf[0] holds the length in bytes */
 	if (xtc_int(mf, &(buf[0])) < 0) return -1;
+
+
 
 	if (xtc_data(mf, (char *) &buf[3], (int) buf[0]) < 0) return -1;
 
@@ -1964,4 +1987,51 @@ static int xtc_3dfcoord(md_file *mf, float *fp, int *size, float *precision) {
 	}
 	return 1;
 }
+
+/* begin by:bing 2017-07-27 */
+// format: header_info + [check_num] + bytecnt + data
+static int is_compressed(md_file *mf) {
+	if (!mf) return mdio_seterror(MDIO_BADPARAMS);
+	int check_num;
+	if(fread((char*)(&check_num), 4, 1, mf->f) != 1) {
+		return mdio_seterror(MDIO_IOERROR);
+	}
+	// 7750 is a magic number for checking whether this file is compressed or not;
+	fprintf(stderr, "check_num: %d\n", check_num);
+	if(check_num == 7750) {
+		return 0;	// means this xtc file is uncompressed;
+	}
+	return -1;
+}
+
+static int xtc_uc_data(md_file *mf, char *buf, int len) {
+	if (!mf || len < 1) return mdio_seterror(MDIO_BADPARAMS);
+	size_t slen = (size_t)len;
+	if (buf) {
+		if (fread(buf, slen, 1, mf->f) != 1) {
+			if (feof(mf->f)) return mdio_seterror(MDIO_EOF);
+			if (ferror(mf->f)) return mdio_seterror(MDIO_IOERROR);
+			else return mdio_seterror(MDIO_UNKNOWNERROR);
+		}
+		if (len % 4) {
+			if (fseek(mf->f, 4 - (len % 4), SEEK_CUR)) {
+				if (feof(mf->f)) return mdio_seterror(MDIO_EOF);
+				if (ferror(mf->f)) return mdio_seterror(MDIO_IOERROR);
+				else return mdio_seterror(MDIO_UNKNOWNERROR);
+			}
+		}
+	}
+	else {
+		int newlen;
+		newlen = len;
+		if (len % 4) newlen += (4 - (len % 4));
+		if (fseek(mf->f, newlen, SEEK_CUR)) {
+			if (feof(mf->f)) return mdio_seterror(MDIO_EOF);
+			if (ferror(mf->f)) return mdio_seterror(MDIO_IOERROR);
+			else return mdio_seterror(MDIO_UNKNOWNERROR);
+		}
+	}
+	return slen;
+}
+/* end by:bing 2017-07-27 */
 #endif
